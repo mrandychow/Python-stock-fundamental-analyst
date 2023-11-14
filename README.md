@@ -1,94 +1,160 @@
 # Python-stock-fundamental-analyst
 
+import math
 import os
 import requests
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from dotenv import find_dotenv, load_dotenv
-from newsapi import NewsApiClient
+import alpha_vantage
+import asyncio
 from rich.console import Console
 from rich.markdown import Markdown
-import yfinance as yf  # for historical stock prices and technical analysis
 
-# Add your API keys here
-NEWS_API = "YOUR NEWS API KEY"
-AV_API = "YOUR ALPHAVANTAGE KEY"
 
-TICKER = 'AAPL'  # Change the symbol for your analysis
+AV_API = "INSERT THE API KEY"
+TICKER = 'AAPL'                           # Here I've put the symbol for Apple, please change it for your analysis
+companyOverview = requests.get(f'https://www.alphavantage.co/query?function=OVERVIEW&symbol={TICKER}&apikey={AV_API}')
+companyOverview = companyOverview.json()
+incomeStmt = requests.get(f'https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol={TICKER}&apikey={AV_API}')
+incomeStmt = incomeStmt.json()
+balanceSheet = requests.get(f'https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol={TICKER}&apikey={AV_API}')
+balanceSheet = balanceSheet.json()
+cashflow = requests.get(f'https://www.alphavantage.co/query?function=CASH_FLOW&symbol={TICKER}&apikey={AV_API}')
+cashflow = cashflow.json()
 
-# Fetch stock data using yfinance
-stock_data = yf.download(TICKER, start='2022-01-01', end='2023-01-01')
+print(f"Analysing {companyOverview['Name']}, {companyOverview['Address']}\n{companyOverview['Description']}")
+pe_ratio = float(companyOverview['PERatio'])
+peg_ratio = float(companyOverview['PEGRatio'])
+pe_ratio = float(companyOverview['PERatio'])
+beta = float(companyOverview['Beta'])
+MA_50 = float(companyOverview['50DayMovingAverage'])
+MA_200 = float(companyOverview['200DayMovingAverage'])
 
-# Technical Analysis
-stock_data['MA_50'] = stock_data['Close'].rolling(window=50).mean()
-stock_data['MA_200'] = stock_data['Close'].rolling(window=200).mean()
+annual_incomes = pd.DataFrame.from_records(incomeStmt['annualReports'])
+annual_incomes.set_index('fiscalDateEnding', inplace=True)
+annual_incomes = annual_incomes.apply(pd.to_numeric, errors='coerce')
+annual_incomes.dropna(axis=1, inplace=True)
+annual_incomes
 
-# Financials
-companyOverview = requests.get(f'https://www.alphavantage.co/query?function=OVERVIEW&symbol={TICKER}&apikey={AV_API}').json()
-incomeStmt = requests.get(f'https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol={TICKER}&apikey={AV_API}').json()
-balanceSheet = requests.get(f'https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol={TICKER}&apikey={AV_API}').json()
-cashflow = requests.get(f'https://www.alphavantage.co/query?function=CASH_FLOW&symbol={TICKER}&apikey={AV_API}').json()
+annual_balances = pd.DataFrame.from_records(balanceSheet['annualReports'])
+annual_balances.set_index('fiscalDateEnding', inplace=True)
+annual_balances = annual_balances.apply(pd.to_numeric, errors='coerce')
+annual_balances.dropna(axis=1, inplace=True)
+annual_balances
 
-# News and Sentiment
-newsapi = NewsApiClient(api_key=NEWS_API)
-news_object = newsapi.get_everything(q=TICKER, from_param='2023-09-15', language='en', sort_by='relevancy')
-all_articles = pd.DataFrame.from_records(news_object['articles'])
+annual_cashflow = pd.DataFrame.from_records(cashflow['annualReports'])
+annual_cashflow.set_index('fiscalDateEnding', inplace=True)
+annual_cashflow = annual_cashflow.apply(pd.to_numeric, errors='coerce')
+annual_cashflow.dropna(axis=1, inplace=True)
+annual_cashflow
 
-newsAndSentiment = requests.get(f'https://www.alphavantage.co/query?function=NEWS_SENTIMENT&symbol={TICKER}&apikey={AV_API}').json()
-newsdf = pd.DataFrame.from_records(newsAndSentiment['feed'])
-
-# Display overall sentiment score
-overall_sentiment_score = np.mean(newsdf['overall_sentiment_score'])
-console = Console()
-
-# Display Technical Analysis
-fig, ax = plt.subplots(figsize=(15, 5))
-ax.plot(stock_data.index, stock_data['Close'], label='Closing Price')
-ax.plot(stock_data.index, stock_data['MA_50'], label='50-day MA')
-ax.plot(stock_data.index, stock_data['MA_200'], label='200-day MA')
-ax.set_title("Stock Price and Moving Averages")
-ax.set_xlabel("Date")
-ax.set_ylabel("Price (USD)")
-ax.legend()
-plt.show()
-
-# Display Financials
-fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 10))
-
-# Plot Income Statement
-axes[0, 0].plot(annual_incomes.index, annual_incomes.operatingIncome, label='Annual Operating Income', c='g')
-axes[0, 0].set_title("Annual Operating Income")
-axes[0, 0].set_ylabel("USD")
-axes[0, 0].legend()
-
-# Plot Balance Sheet
-axes[0, 1].bar(date_list, annual_balances['totalAssets'], width=width, label='Total Assets', color='b')
-axes[0, 1].bar(date_list, annual_balances['totalLiabilities'], width=width, label='Total Liabilities', color='r', alpha=0.7)
-axes[0, 1].set_title("Total Assets vs Total Liabilities")
-axes[0, 1].set_ylabel("USD")
-axes[0, 1].legend()
-
-# Plot Cash Flow
-axes[1, 0].bar(annual_cashflow.index, annual_cashflow['profitLoss'], label='Profit/Loss')
-axes[1, 0].set_title("Profit/Loss in Cash Flow")
-axes[1, 0].set_ylabel("USD")
-axes[1, 0].legend()
-
-# Display News Sentiment
-axes[1, 1].bar(['Overall Sentiment'], [overall_sentiment_score], color='purple')
-axes[1, 1].set_title("Overall News Sentiment")
-axes[1, 1].set_ylabel("Sentiment Score")
-plt.tight_layout()
-plt.show()
-
-# Display Buy/Sell Signals
 MARKDOWN = f"""
-P/E Ratio: {pe_ratio} \t PEG Ratio: {peg_ratio} \t Beta: {beta}
-# Signal 1: {'BUY (50 day Moving Average is above 200 day)' if MA_50 > MA_200 else 'SELL (50 day Moving Average is below 200 day)'}
-# Signal 2: {'BUY' if signals > 0.5 else 'SELL'}
-# Signal 3: {'BUY' if overall_sentiment_score > 0.15 else 'HOLD' if -0.15 < overall_sentiment_score < 0.15 else 'SELL'}
+# P/E Ratio : {pe_ratio} \t PEG Ratio: {peg_ratio} \t Beta : {beta} \n # Signal 1: {'BUY (50 day Moving Average is above 200 day)' if MA_50 > MA_200 else 'SELL (50 day Moving Average is below 200 day)'}
+
 """
+
+console = Console()
+md = Markdown(MARKDOWN)
+console.print(md)
+#
+fig1 = plt.figure(figsize=(15, 3))
+plt.plot(annual_incomes.index, annual_incomes.operatingIncome, label='Annual Operating Income (Left scale)', c='g')
+ax = fig1.axes[0]
+ax2 = ax.twinx()
+ax2.plot(annual_incomes.index, annual_incomes.operatingExpenses, label='Annual Operating Expense (Right scale)', c='r')
+_ = plt.title("Income vs Expense Chart")
+ax.legend(loc='lower left')
+ax2.legend(loc='upper right')
+ax.annotate('Both income and Expense increasing, but income scale is larger than expense', xy=('2021-09-30', 1.2e11),
+           xytext=('2020-09-30', 0.9e11), arrowprops=dict(facecolor='black', shrink=0.05), bbox=dict(boxstyle='round', fc='0.8'))
+ax.set_ylabel('USD')
+ax2.set_ylabel('USD')
+#
+income_vs_expense = ((annual_incomes.operatingIncome / annual_incomes.operatingExpenses) - 1).mean()
+
+width = 0.25
+multiplier = 0
+date_list = None
+fig2, ax = plt.subplots(layout='constrained', figsize=(12.75, 3))
+for attr in annual_balances[['totalAssets', 'totalLiabilities']].items():
+    offset = width * multiplier
+    if date_list is None:
+        date_list = attr[1].index.tolist()
+    x = np.arange(len(date_list))
+    rects = ax.bar(x + offset, attr[1].values.tolist(), width, label=attr[0])
+    # ax.bar_label(rects, padding=3)
+    multiplier += 1
+ax.set_ylabel('USD')
+ax.set_title("Gross Profit Chart")
+ax.set_xticks(x + width/2, date_list)
+ax.legend(loc='upper right')
+
+asset_vs_liability = ((annual_balances.totalAssets / annual_balances.totalLiabilities) - 1).mean()
+
+fig3 = plt.figure(figsize=(15.93, 3))
+rects = plt.bar(annual_cashflow.index, annual_cashflow.profitLoss, label='Profit/Loss')
+ax = fig3.axes[0]
+_ = ax.bar_label(rects, padding=3)
+
+pnl = (annual_cashflow['profitLoss'] > 0).mean()
+
+signals = np.mean([sg > 0 for sg in [pnl, asset_vs_liability, income_vs_expense]])
+
+if signals > 0.5:
+    console = Console()
+    md = Markdown(f"# Signal 2: {'BUY'}")
+    console.print(md)
+else:
+    console = Console()
+    md = Markdown(f"# Signal 2: {'SELL'}")
+    console.print(md)
+
+# Fetch news sentiment using Alpha Vanatage
+def FN1(topic, stock_code):
+    #find each ticker score
+    for ticker in topic['ticker_sentiment']:
+            if (stock_code == ticker['ticker']):
+                return{f"{stock_code}-ticker_sentiment_score": ticker['ticker_sentiment_score']}
+    return topic
+
+def topicBase(feed_decode, stock_code):
+    #de-structure topic base on topic
+    result = []
+    for eachTopic in feed_decode:
+        result.append(FN1(eachTopic, stock_code))
+    return result
+
+async def main(stock_code):
+    api_url = f'https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={TICKER}&apikey={AV_API}'
+    feed = requests.get(api_url)
+    feed_decode = feed.json()
+
+    return topicBase(feed_decode['feed'], stock_code)
+
+print(asyncio.run(main('AAPL')))
+
+# Calculate overall sentiment score
+sentiment_score = asyncio.run(main('AAPL'))
+for item in sentiment_score:
+    print(item.get('AAPL-ticker_sentiment_score'))
+
+
+x = float(item.get('AAPL-ticker_sentiment_score'))
+y = len(sentiment_score)
+overall_sentiment_score = math.fsum([x])/y # surround the arguments with square brackets since SUM funciton expects a list
+print(overall_sentiment_score)
+
+#Display Signal 3
+console = Console()
+if overall_sentiment_score > 0.15:
+    md = Markdown("# Signal 3: BUY")
+elif -0.15 <= overall_sentiment_score <= 0.15:
+    md = Markdown("# Signal 3: HOLD")
+else:
+    md = Markdown("# Signal 3: SELL")
+console.print(md)
 
 md = Markdown(MARKDOWN)
 console.print(md)
